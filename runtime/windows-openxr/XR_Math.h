@@ -75,6 +75,7 @@ namespace XR {
 		// Inherit constructors
 		using OVR::Quatf::Quat;
 		Quatf() : OVR::Quatf() { }
+		Quatf(const OVR::Quatf& q) : OVR::Quatf(q) { }
 
 		// OpenXR-interop support
 		Quatf(const XrQuaternionf& s)
@@ -98,6 +99,7 @@ namespace XR {
 		// Inherit constructors
 		using OVR::Posef::Pose;
 		Posef() : OVR::Posef() { }
+		Posef(const OVR::Posef& p) : OVR::Posef(p) { }
 
 		// OpenXR-interop support
 		Posef(const XrPosef& s)
@@ -133,7 +135,7 @@ namespace XR {
 		{ }
 
 		// Needs to be explicitly converted
-		operator const XrFovf() const
+		operator XrFovf() const
 		{
 			return XrFovf{
 				-atanf(LeftTan),
@@ -152,7 +154,7 @@ namespace XR {
 		Matrix4f() : OVR::Matrix4f() { }
 
 		// Needs to be explicitly converted
-		operator const XrFovf() const
+		operator XrFovf() const
 		{
 			return XR::FovPort((M[1][2] + 1.0f) / M[1][1], (1.0f - M[1][2]) / M[1][1],
 								(1.0f - M[0][2]) / M[0][0], (M[0][2] + 1.0f) / M[0][0]);

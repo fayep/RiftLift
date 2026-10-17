@@ -19,14 +19,25 @@ using Microsoft::WRL::ComPtr;
 #include <d3d12.h>
 #include <openxr/openxr_platform.h>
 
-LONG DetourVirtual(PVOID pInstance, UINT methodPos, PVOID *ppPointer, PVOID pDetour)
+// Points one entry of an object's vtable at pDetour, keeping the original in *ppPointer and in
+// session->HookedFunctions so it can be put back. Rewriting the method's own code, as Detours
+// does, breaks when the method is ARM64EC code: DXMT's d3d11 under Wine on Apple silicon.
+LONG DetourVirtual(ovrSession session, PVOID pInstance, UINT methodPos, PVOID *ppPointer, PVOID pDetour)
 {
 	if (!pInstance || !ppPointer)
 		return ERROR_INVALID_PARAMETER;
 
-	LPVOID* pVMT = *((LPVOID**)pInstance);
-	*ppPointer = pVMT[methodPos];
-	return DetourAttach(ppPointer, pDetour);
+	LPVOID* slot = *((LPVOID**)pInstance) + methodPos;
+	if (*slot == pDetour)
+		return NO_ERROR; // another session already hooked this class
+	DWORD protect;
+	if (!VirtualProtect(slot, sizeof(*slot), PAGE_READWRITE, &protect))
+		return GetLastError();
+	*ppPointer = *slot;
+	*slot = pDetour;
+	VirtualProtect(slot, sizeof(*slot), protect, &protect);
+	session->HookedFunctions.insert(std::make_pair((void**)slot, *ppPointer));
+	return NO_ERROR;
 }
 
 typedef HRESULT(WINAPI* _CreateShaderResourceView)(
@@ -159,15 +170,10 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_CreateTextureSwapChainDX(ovrSession session,
 			if (pDevice->GetFeatureLevel() < graphicsReq.minFeatureLevel)
 				return ovrError_IncompatibleGPU;
 
-			DetourTransactionBegin();
-			DetourUpdateThread(GetCurrentThread());
 			// Hook D3D11 functions so we can ensure NULL descriptors keep working on typeless formats
 			// This fixes Echo Arena, among others.
-			DetourVirtual(pDevice.Get(), 7, (PVOID*)&TrueCreateShaderResourceView, HookCreateShaderResourceView);
-			session->HookedFunctions.insert(std::make_pair((PVOID*)&TrueCreateShaderResourceView, HookCreateShaderResourceView));
-			DetourVirtual(pDevice.Get(), 9, (PVOID*)&TrueCreateRenderTargetView, HookCreateRenderTargetView);
-			session->HookedFunctions.insert(std::make_pair((PVOID*)&TrueCreateRenderTargetView, HookCreateRenderTargetView));
-			DetourTransactionCommit();
+			DetourVirtual(session, pDevice.Get(), 7, (PVOID*)&TrueCreateShaderResourceView, HookCreateShaderResourceView);
+			DetourVirtual(session, pDevice.Get(), 9, (PVOID*)&TrueCreateRenderTargetView, HookCreateRenderTargetView);
 
 			XrGraphicsBindingD3D11KHR graphicsBinding = XR_TYPE(GRAPHICS_BINDING_D3D11_KHR);
 			graphicsBinding.device = pDevice.Get();
@@ -195,13 +201,8 @@ OVR_PUBLIC_FUNCTION(ovrResult) ovr_CreateTextureSwapChainDX(ovrSession session,
 
 			// Hook D3D12 functions so we can ensure NULL descriptors keep working on typeless formats
 			// This fixes Echo Arena, among others.
-			DetourTransactionBegin();
-			DetourUpdateThread(GetCurrentThread());
-			DetourVirtual(pDevice12.Get(), 18, (PVOID*)&TrueCreateShaderResourceView12, HookCreateShaderResourceView12);
-			session->HookedFunctions.insert(std::make_pair((PVOID*)&TrueCreateShaderResourceView12, HookCreateShaderResourceView12));
-			DetourVirtual(pDevice12.Get(), 20, (PVOID*)&TrueCreateRenderTargetView12, HookCreateRenderTargetView12);
-			session->HookedFunctions.insert(std::make_pair((PVOID*)&TrueCreateRenderTargetView12, HookCreateRenderTargetView12));
-			DetourTransactionCommit();
+			DetourVirtual(session, pDevice12.Get(), 18, (PVOID*)&TrueCreateShaderResourceView12, HookCreateShaderResourceView12);
+			DetourVirtual(session, pDevice12.Get(), 20, (PVOID*)&TrueCreateRenderTargetView12, HookCreateRenderTargetView12);
 
 			XrGraphicsBindingD3D12KHR graphicsBinding = XR_TYPE(GRAPHICS_BINDING_D3D12_KHR);
 			graphicsBinding.device = pDevice12.Get();

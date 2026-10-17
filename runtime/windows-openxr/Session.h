@@ -38,6 +38,7 @@ typedef std::pair<std::vector<XrVector2f>,
 
 struct ovrHmdStruct
 {
+	// Hooked vtable entries and the functions they pointed to (see DetourVirtual).
 	std::map<void**, void*> HookedFunctions;
 
 	// Synchronization

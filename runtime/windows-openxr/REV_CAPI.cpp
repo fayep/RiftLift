@@ -240,14 +240,17 @@ OVR_PUBLIC_FUNCTION(void) ovr_Destroy(ovrSession session)
 
 	session->DestroySession();
 
-	if (!session->HookedFunctions.empty())
+	// Put back the vtable entries DetourVirtual replaced.
+	for (auto it : session->HookedFunctions)
 	{
-		DetourTransactionBegin();
-		DetourUpdateThread(GetCurrentThread());
-		for (auto it : session->HookedFunctions)
-		DetourDetach(it.first, it.second);
-		DetourTransactionCommit();
+		DWORD protect;
+		if (VirtualProtect(it.first, sizeof(*it.first), PAGE_READWRITE, &protect))
+		{
+			*it.first = it.second;
+			VirtualProtect(it.first, sizeof(*it.first), protect, &protect);
+		}
 	}
+	session->HookedFunctions.clear();
 
 	// Delete the session from the list of sessions
 	g_Sessions.erase(std::find_if(g_Sessions.begin(), g_Sessions.end(), [session](ovrHmdStruct const& o) { return &o == session; }));
