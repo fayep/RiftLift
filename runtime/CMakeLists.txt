@@ -41,6 +41,11 @@ set(detours_sources detours modules disasm image creatwth disolx86 disolx64 diso
 list(TRANSFORM detours_sources PREPEND "${DETOURS_SOURCE_DIR}/src/")
 list(TRANSFORM detours_sources APPEND ".cpp")
 add_library(detours STATIC ${detours_sources})
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+  # Detours' module scan starts from arithmetic on a null pointer, which clang treats as
+  # unreachable and compiles to a trap; MSVC doesn't. Unoptimised, it does what MSVC does.
+  target_compile_options(detours PRIVATE /Od)
+endif()
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/include/detours")
 configure_file("${DETOURS_SOURCE_DIR}/src/detours.h" "${CMAKE_BINARY_DIR}/include/detours/detours.h" COPYONLY)
 configure_file("${DETOURS_SOURCE_DIR}/src/detver.h" "${CMAKE_BINARY_DIR}/include/detours/detver.h" COPYONLY)
