@@ -37,6 +37,8 @@ constexpr const char* ResultToStringA(XrResult e)
 }
 
 extern XrResult g_LastResult;
+// Counts the OpenXR instances the bridge has created; see XR_FUNCTION.
+extern uint32_t g_InstanceGeneration;
 
 #ifdef NDEBUG
 #define assertmsg(expression, message) ((void)0)
@@ -71,10 +73,15 @@ extern XrResult g_LastResult;
 
 #define XR_TYPE(x) { XR_TYPE_##x, nullptr }
 
+// Looked up again for each new instance: when an instance is destroyed the loader may unload the
+// runtime, and the next one can load it at another address (Asgard's Wrath under Wine).
 #define XR_FUNCTION(instance, func) \
 	static PFN_xr##func func = nullptr; \
-	if (!func) \
-		CHK_XR(xrGetInstanceProcAddr(instance, "xr" #func, (PFN_xrVoidFunction*)&##func));
+	static uint32_t func##Generation = 0; \
+	if (!func || func##Generation != g_InstanceGeneration) { \
+		CHK_XR(xrGetInstanceProcAddr(instance, "xr" #func, (PFN_xrVoidFunction*)&func)); \
+		func##Generation = g_InstanceGeneration; \
+	}
 
 ovrResult ResultToOvrResult(XrResult error);
 XrTime AbsTimeToXrTime(XrInstance instance, double absTime);

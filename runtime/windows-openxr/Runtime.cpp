@@ -2,6 +2,8 @@
 #include "Common.h"
 #include "../Version.h"
 
+uint32_t g_InstanceGeneration = 0;
+
 #include <Windows.h>
 #include <Shlwapi.h>
 #include <algorithm>
@@ -110,6 +112,7 @@ ovrResult Runtime::CreateInstance(XrInstance* out_Instance, const ovrInitParams*
 	createInfo.enabledExtensionCount = (uint32_t)m_extensions.size();
 	createInfo.enabledExtensionNames = m_extensions.data();
 	CHK_XR(xrCreateInstance(&createInfo, out_Instance));
+	g_InstanceGeneration++;
 
 	char filepath[MAX_PATH];
 	GetModuleFileNameA(NULL, filepath, MAX_PATH);
