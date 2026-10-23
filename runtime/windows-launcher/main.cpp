@@ -73,6 +73,52 @@ bool OpenLog()
 	return g_LogFile != NULL;
 }
 
+// Sets a variable for the game (it inherits the launcher's environment) unless it is set already.
+static void SetDefaultVariable(const char* name, const std::string& value)
+{
+	if (GetEnvironmentVariableA(name, NULL, 0) > 0)
+	{
+		Log("%s already set; keeping it\n", name);
+		return;
+	}
+	SetEnvironmentVariableA(name, value.c_str());
+	Log("%s=%s\n", name, value.c_str());
+}
+
+// A shared runtime beside the launcher, laid out as an Oculus installation's Support\oculus-runtime,
+// so a game needs nothing copied into its prefix: LibOVR is found through LIBOVR_DLL_DIR, Meta's
+// platform DLLs and their dependencies through PATH, and the platform stand-in through
+// RIFTLIFT_PLATFORM_DLL. riftlift.env beside the launcher holds NAME=VALUE defaults.
+static void UseSharedRuntime(const std::string& moduleDir)
+{
+	std::string runtime = moduleDir + "\\Support\\oculus-runtime";
+	if (PathIsDirectoryA(runtime.c_str()))
+	{
+		DWORD size = GetEnvironmentVariableA("PATH", NULL, 0);
+		std::vector<char> path(size ? size : 1);
+		if (size) GetEnvironmentVariableA("PATH", path.data(), size);
+		std::string joined = runtime + (size ? ";" + std::string(path.data()) : "");
+		SetEnvironmentVariableA("PATH", joined.c_str());
+		Log("PATH starts with %s\n", runtime.c_str());
+		SetDefaultVariable("LIBOVR_DLL_DIR", runtime + "\\");
+		SetDefaultVariable("RIFTLIFT_PLATFORM_DLL", runtime + "\\LibOVRPlatformImpl64_1.dll");
+	}
+	FILE* env = fopen((moduleDir + "\\riftlift.env").c_str(), "r");
+	if (!env)
+		return;
+	char line[4096];
+	while (fgets(line, sizeof line, env))
+	{
+		line[strcspn(line, "\r\n")] = 0;
+		char* equals = strchr(line, '=');
+		if (line[0] == '#' || !equals || equals == line)
+			continue;
+		*equals = 0;
+		SetDefaultVariable(line, equals + 1);
+	}
+	fclose(env);
+}
+
 int wmain(int argc, wchar_t *argv[]) {
 	if (argc < 2) {
 		return -1;
@@ -151,6 +197,18 @@ int wmain(int argc, wchar_t *argv[]) {
 		{
 			waitForExit = true;
 		}
+		else if (wcscmp(argv[i], L"/env") == 0)
+		{
+			std::string assignment;
+			if (++i >= argc || !WideToUtf8(argv[i], assignment) || assignment.find('=') == std::string::npos)
+			{
+				Log("Missing or invalid NAME=VALUE for /env\n");
+				return -1;
+			}
+			size_t equals = assignment.find('=');
+			SetEnvironmentVariableA(assignment.substr(0, equals).c_str(), assignment.substr(equals + 1).c_str());
+			Log("/env %s\n", assignment.substr(0, equals).c_str());
+		}
 		else if (wcscmp(argv[i], L"/cwd") == 0)
 		{
 			if (++i >= argc)
@@ -172,6 +230,7 @@ int wmain(int argc, wchar_t *argv[]) {
 		Log("Missing target executable (%lu)\n", ERROR_INVALID_PARAMETER);
 		return -1;
 	}
+	UseSharedRuntime(moduleDir);
 
 	if (dlls.empty())
 	{
